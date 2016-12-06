@@ -105,8 +105,12 @@ alias ll="ls -FlAh --color=auto"
 alias ls="ls -Flh --color=auto"
 alias grep="grep --color=auto"
 alias proc="ps -ef | grep $1"
-alias wttr="curl http://wttr.in/Osnabrueck"
-alias x="exit "
+
+# Install vundle and zsh-syntax-highlighting
+vimbasicinstall() {
+    git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim # Open vim, run ':PluginInstall'
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ~/git/zsh-syntax-highlighting
+}
 
 # Generate Random Password
 genpasswd() {
@@ -119,14 +123,4 @@ genpasswd() {
 pingim() {
     local INPUT=$1
     ping -i 0.2 -vO -s 504 $INPUT | while read PING; do echo "$(date +%d.%m.%Y-%H:%M:%S): $PING" 2>&1 ; done
-}
-
-hds() {
-    local INPUT=$1
-    local DEVICE='/dev/sdb'
-        if [ "$INPUT" == "slow" ]; then
-            sudo hdparm -B 50 -S 1 $DEVICE
-        elif [ "$INPUT" == "fast" ]; then
-            sudo hdparm -B 254 -S 60 $DEVICE
-        fi
 }
