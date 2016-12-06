@@ -1,0 +1,24 @@
+#!/bin/bash
+
+echo "Stopping firewall and allowing everyone..."
+
+# Set iptables binarie
+FW_BIN=/sbin/iptables
+
+# Failsafe - die if /sbin/iptables not found 
+[ ! -x "$FW_BIN" ] && { echo "$0: \"${FW_BIN}\" command not found."; exit 1; }
+
+# Accept everything
+$FW_BIN --policy INPUT ACCEPT
+$FW_BIN --policy OUTPUT ACCEPT
+$FW_BIN --policy FORWARD ACCEPT
+
+# Flush all tables
+$FW_BIN -F
+$FW_BIN -X
+$FW_BIN -t nat -F
+$FW_BIN -t nat -X
+$FW_BIN -t mangle -F
+$FW_BIN -t mangle -X
+$FW_BIN -t raw -F
+$FW_BIN -t raw -X

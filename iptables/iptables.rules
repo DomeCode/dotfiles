@@ -1,0 +1,206 @@
+#!/bin/bash
+
+# $FW_BIN Binarie
+FW_BIN='/sbin/iptables'
+## Failsafe - die if /sbin/iptables not found 
+[ ! -x "$FW_BIN" ] && { echo "$0: \"${FW_BIN}\" command not found."; exit 1; }
+
+# Firewall ip-address
+FW_IP='0.0.0.0'
+
+# High-Ports
+FW_HP='1024:65535'
+
+# Low-Ports
+FW_LP='0:1023'
+
+# Netzwerk Interface
+FW_IF='eth0'
+FW_LO='lo'
+
+DNS_SERVERS='0.0.0.0,0.0.0.0,0.0.0.0'
+
+#######################
+## START GRUNDREGELN ##
+#######################
+
+###################################
+## Firewall Regeln zuruecksetzen ##
+
+$FW_BIN --policy INPUT ACCEPT
+$FW_BIN --policy OUTPUT ACCEPT
+$FW_BIN --policy FORWARD ACCEPT
+
+$FW_BIN -F
+$FW_BIN -X
+$FW_BIN -t nat -F
+$FW_BIN -t nat -X
+$FW_BIN -t mangle -F
+$FW_BIN -t mangle -X
+$FW_BIN -t raw -F
+$FW_BIN -t raw -X
+
+#########################
+## INPUT: Basis-Regeln ##
+
+$FW_BIN -A INPUT -i $FW_LO -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -f -j DROP
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -m conntrack --ctstate INVALID -j DROP
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p udp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+###########################
+## FORWARD: Basis-Regeln ##
+
+$FW_BIN -A FORWARD -i $FW_IF -m conntrack --ctstate NEW,INVALID -j DROP
+$FW_BIN -A FORWARD -m limit --limit 15/min -j LOG --log-prefix "IPT FOR: " --log-level 6
+
+##########################
+## OUTPUT: Basis-Regeln ##
+
+$FW_BIN -A OUTPUT -o $FW_LO -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -m conntrack --ctstate INVALID -j DROP
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p tcp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p udp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+##########################
+## Firewall Grundregeln ##
+
+$FW_BIN --policy INPUT DROP
+$FW_BIN --policy OUTPUT DROP
+$FW_BIN --policy FORWARD DROP
+
+######################
+## ENDE GRUNDREGELN ##
+######################
+
+############################
+## START ABWEHRMASSNAHMEN ##
+############################
+
+########################################
+## INPUT: Blocke private Netzadressen ##
+
+$FW_BIN -N PRIVNET
+$FW_BIN -A PRIVNET -m limit --limit 15/minute -j LOG --log-prefix "PRIVNET: " --log-level 6
+$FW_BIN -A PRIVNET -j DROP
+
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 10.0.0.0/8 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 172.16.0.0/12 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 192.168.0.0/16 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 127.0.0.0/8 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 224.0.0.0/4 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 240.0.0.0/5 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 255.255.255.255 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 0.0.0.0/8 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s 169.254.0.0/16 -j PRIVNET
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -s $FW_IP -j PRIVNET
+
+#############################
+## INPUT: Ungültige Pakete ##
+
+$FW_BIN -N BADFLAG
+$FW_BIN -A BADFLAG -m limit --limit 15/minute -j LOG --log-prefix "BADFLAG: " --log-level 6
+$FW_BIN -A BADFLAG -j DROP
+
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp ! --syn -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp ! --tcp-flags ALL SYN -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags ALL NONE -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags ALL ALL -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags ALL ACK,RST,SYN,FIN -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags SYN,FIN SYN,FIN -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags SYN,RST SYN,RST -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags ALL FIN,URG,PSH -m conntrack --ctstate NEW -j BADFLAG
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -m conntrack --ctstate NEW -j BADFLAG
+
+########################
+## ICMP-FILTER ##
+
+# Type 0 -- Echo Reply
+# Type 3 -- Destination Unreachable
+# Type 8 -- Echo Request
+# Type 11 -- Time Exceeded
+
+$FW_BIN -N ICMPDROP
+$FW_BIN -A ICMPDROP -m limit --limit 15/minute -j LOG --log-prefix "ICMPDROP: " --log-level 6
+$FW_BIN -A ICMPDROP -j DROP
+
+## INPUT ##
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p icmp -m icmp --icmp-type 0 -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p icmp -m icmp --icmp-type 3 -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p icmp -m icmp --icmp-type 8 -m limit --limit 2/s --limit-burst 10 -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p icmp -m icmp --icmp-type 11 -j ACCEPT
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p icmp -j ICMPDROP
+
+## OUTPUT ##
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p icmp -m icmp --icmp-type 0 -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p icmp -m icmp --icmp-type 3 -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p icmp -m icmp --icmp-type 8 -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p icmp -m icmp --icmp-type 11 -j ACCEPT
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p icmp -j ICMPDROP
+
+###########################
+## ENDE ABWEHRMASSNAHMEN ##
+###########################
+
+#############################
+## START PORTFREISCHALTUNG ##
+#############################
+
+##############################
+## INPUT: Portfreischaltung ##
+
+## TCP ##
+
+# SSH #
+$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --dport 2223 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+# WEB:80 #
+#$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --dport 80 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+# WEB:443 #
+#$FW_BIN -A INPUT -i $FW_IF -d $FW_IP -p tcp -m tcp --dport 443 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+## UDP ##
+
+## LOG ##
+$FW_BIN -A INPUT -m limit --limit 15/min -j LOG --log-prefix "IPT IN: " --log-level 6
+
+#################################       
+## OUTPUT: Portfreischaltungen ##
+
+## TCP ##
+
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p tcp -m tcp -m multiport --dports 443,80 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+# WHOIS #
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p tcp -m tcp -m multiport --dports 43,4321 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+# SMTP #
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p tcp -m tcp --dport 25 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+## UDP ##
+
+# DNS #
+$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -d $DNS_SERVERS -p udp -m udp --dport 53 --sport $FW_HP -m conntrack --ctstate NEW -j ACCEPT
+
+# NTP #
+#$FW_BIN -A OUTPUT -o $FW_IF -s $FW_IP -p udp -m udp --dport 123 --sport 123 -m conntrack --ctstate NEW -j ACCEPT
+
+## LOG ##
+$FW_BIN -A OUTPUT -m limit --limit 15/min -j LOG --log-prefix "IPT OUT: " --log-level 6
+
+############################
+## ENDE PORTFREISCHALTUNG ##
+############################
+
+#####################
+## START ABSCHLUSS ##
+#####################
+
+if [ -e /etc/init.d/fail2ban ]; then /etc/init.d/fail2ban restart
+if [ -e /etc/init.d/psad ];then /etc/init.d/psad restart
+
+####################
+## ENDE ABSCHLUSS ##
+####################
