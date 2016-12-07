@@ -1,4 +1,4 @@
-# dotfiles
-All my little dotfiles
+# sysfiles
+All my little systemconfigs
 
-Feel free to contribute, copy and share!
+Feel free to contribute, copy, share and enhance!
