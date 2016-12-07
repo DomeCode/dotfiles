@@ -1,0 +1,133 @@
+## Site config
+
+server {
+    listen 62.113.211.132:80;
+    server_name www.piwik.domenick-lieneweg.de piwik.domenick-lieneweg.de;
+    add_header Strict-Transport-Security "max-age=15768000; includeSubdomains; preload";
+    return 301 "https://domenick-lieneweg.de$request_uri";
+}
+
+server {
+    ## Listening ports
+    listen 62.113.211.132:443 ssl http2;
+    
+    ## Enable and configure SSL
+    ssl on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+    ssl_dhparam /etc/ssl/private/dhparam.pem;
+    ssl_ciphers 'ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256:AES256-SHA:AES128-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!CAMELLIA:!DES:!MD5:!PSK:!RC4:!3DES';
+    ssl_certificate /etc/letsencrypt/live/piwik.domenick-lieneweg.de/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/piwik.domenick-lieneweg.de/privkey.pem;
+    add_header Strict-Transport-Security "max-age=15768000; includeSubdomains; preload";
+
+    ## OCSP Stapling
+    ## fetch OCSP records from URL in ssl_certificate and cache them
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/letsencrypt/live/piwik.domenick-lieneweg.de/fullchain.pem;
+
+    ## Enable Content-Security-Policy
+    #add_header Content-Security-Policy "default-src https: ; img-src https: ; script-src https: 'unsafe-inline'; style-src https: ; font-src https: ;" always;
+    
+    ## Make sure, we are not embedded
+    #add_header X-Frame-Options "DENY" always;
+
+    ## Enable X-Xss-Protection
+    add_header X-Xss-Protection "1; mode=block" always;
+
+    ## Enable Clickjacking Protection
+    #add_header X-Frame-Options "SAMEORIGIN" always;
+
+    ## Enable MIMI-Sniffing Protection
+    add_header X-Content-Type-Options "nosniff" always;
+
+    ## Web-URL
+    server_name piwik.domenick-lieneweg.de www.piwik.domenick-lieneweg.de;
+
+    ## Allow access only to our domains
+    if ($host !~ ^(piwik.domenick-lieneweg.de|www.piwik.domenick-lieneweg.de)$ ) {
+        return 444;
+    }
+
+    ## Logs
+    access_log  /var/www/piwik/logs/access.log  main;
+    error_log   /var/www/piwik/logs/error.log warn;
+
+    ## Define document root
+    root   /var/www/piwik/html;
+    index index.html index.htm index.php;
+    try_files $uri $uri/ /index.php?$args;
+    
+    ## Stop deep linking or hot linking
+    location wp-content/uploads/ {
+        valid_referers none blocked domenick-lieneweg.de *.domenick-lieneweg.de;
+        if ($invalid_referer) {
+            return   403;
+        }
+    }
+    
+    ## ERROR, NOT FOUND
+    error_page  404     errors/404.html;
+
+    ## Redirect server error pages to the static page /50x.html
+    error_page   500 502 503 504  errors/50x.html;
+
+    ## Pass PHP scripts to FastCGI server listening on the php-fpm socket
+    location ~ \.php$ {
+        try_files                   $uri =404;
+        fastcgi_split_path_info     ^(.+\.php)(/.+)$;
+        fastcgi_pass                unix:/var/run/php5-fpm.sock;
+        fastcgi_index               index.php;
+        fastcgi_max_temp_file_size  0;
+        fastcgi_buffer_size         4K;
+        fastcgi_buffers             256 4k;
+        fastcgi_param               SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include                     fastcgi_params;
+    }
+    
+    ## Directives to send expires headers and turn off 404 error logging.
+    location ~* ^.+\.(ogg|ogv|svg|svgz|eot|otf|woff|mp4|ttf|rss|atom|jpg|jpeg|gif|png|ico|zip|tgz|gz|rar|bz2|doc|xls|exe|ppt|tar|mid|midi|wav|bmp|rtf)$ {
+           access_log off; log_not_found off; expires max;
+    }
+
+    ## Directives to send expires headers and turn off 404 error logging.
+    location ~* ^.+\.(css|js)$ {
+           access_log off; log_not_found off; expires 1w;
+    }
+     
+    ## Only allow these request methods ##
+    if ($request_method !~ ^(GET|HEAD|POST)$ ) {
+        return 444;
+    }
+
+    ## Deny certain Referers ###
+    if ( $http_referer ~* (viagra|nude|casino|babes|forsale|girl|jewelry|love|nudit|poker|porn|sex|teen) ) {
+        return 403;
+    }
+    
+    ## Block some nasty robots
+    if ($http_user_agent ~ (msnbot|Purebot|Baiduspider|Lipperhey|Mail.Ru|scrapbot) ) {
+        return 403;
+    }
+    
+    ## Deny scripts inside writable directories
+    location ~* /(images|cache|media|logs|tmp)/.*.(php|pl|py|jsp|asp|sh|cgi)$ {
+        return 403;
+        error_page 403 /403_error.html;
+    }
+
+    ## Deny access to htaccess and htpasswd files
+    location ~ /\.ht {
+        deny  all;
+    }
+
+    ## Allow robots and disable logging
+    location = /robots.txt {
+        allow all;
+        log_not_found off;
+        access_log off;
+    }
+}
